@@ -1,0 +1,21 @@
+model:
+    arch: pspnet
+data:
+    dataset: pascal
+    train_split: train_aug
+    val_split: val
+    img_rows: 256
+    img_cols: 256
+    path: /private/home/meetshah/misc_code/ps/data/VOCdevkit/VOC2012/
+training:
+    train_iters: 300000
+    batch_size: 2
+    val_interval: 1000
+    print_interval: 50
+    l_rate: 0.01
+    power: 0.9
+    l_schedule:
+    momentum: 0.9
+    weight_decay: 0.0001
+    resume: pspnet_pascal_best_model.pkl
+    visdom: False
