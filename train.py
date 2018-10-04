@@ -64,7 +64,8 @@ def train(cfg){
                             weight_decay=cfg['training']['weight_decay']
     )
 
-    loss_fn = cross_entropy2d #multi_scale_cross_entropy2d
+    loss_seg_fn = cross_entropy2d #multi_scale_cross_entropy2d
+    loss_ssd_fn = MultiBoxlLoss()
     
     start_iter=0
     if cfg['training']['resume'] is not None:
@@ -106,7 +107,26 @@ def train(cfg){
             optimizer.zero_grad()
             # ssd : loc, conf // seg : scores
             loc, conf, scores = model(images)
-            seg_loss = loss_fn(input=scores, target=labels)
+            seg_loss = loss_seg_fn(input=scores, target=labels)
+            ssd_loss = loss_ssd_fn(loc, loc_label, conf, conf_label)
+            loss = seg_loss+ssd_loss
+            loss.backward()
+            optimizer.step()
+    
+            if cfg['training']['visdom']:
+                vis.line(
+                    X=torch.ones((1,1)).cpu()*i,
+                    Y=torch.Tensor([loss.data[0]]).unsqueeze(0).cpu(),
+                    win=loss_window,
+                    updata="append",
+                )
+            if (i+1)%cfg['training']['print_interval']==0:
+                print(
+                       "Iter [%d/%d] Loss: %.4f LR: %.8f" % (i+1, cfg['training']['train_iters'], loss.item(), scheduler.get_lr()[-1])
+                )
+            if (i+1)%cfg['training']['val_interval']==0:
+                model.eval()
+                for i_val, (images_val, labels_val)...
 }
 
 
