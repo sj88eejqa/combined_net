@@ -2,8 +2,10 @@ import argparse
 import yaml
 import visdom
 import torch
+from tqdm import tqdm
 import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils import data
+import torchvision.transforms as transforms
 from models import combined_net,metircs
 from models.loss import *
 from models.multibox_loss import MultiBoxLoss
@@ -16,8 +18,14 @@ def train(cfg){
     data_loader = get_loader(cfg['data']['dataset'])
     data_path = get_data_path(cfg['data']['dataset'])
 
+    transform = transforms.Compose([transforms.ToTensor(),
+                                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
+
     t_loader = data_loader(
-        data_path,
+        root=data_path,
+        detect_list="ImageSets/Detection",
+        is_train=True,
+        trainform=transform,
         is_transform=True,
         spilt=cfg['data']['train_spilt'],
         img_size=(cfg['data']['img_rows'], cfg['data']['img_cols']),
@@ -25,7 +33,10 @@ def train(cfg){
     )
 
     v_loader = data_loader(
-        data_path,
+        root=data_path,
+        detect_list="ImageSets/Detection",
+        is_train=False,
+        tranform=transform,
         is_transform=True,
         spilt=cfg['data']['val_split'],
         img_size=(cfg['data']['img_rows'], cfg['data']['img_cols']),
@@ -97,7 +108,7 @@ def train(cfg){
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda i: (1-i/cfg['training']['train_iters'])**cfg['training']['power']])
 
     while i <= cfg['training']['train_iters']:
-        for(images,labels) in trainloader:
+        for(images,seg_labels,loc_labels,conf_labels) in trainloader:
             scheduler.step(i)
             i+=1
             model.train()
@@ -107,8 +118,8 @@ def train(cfg){
             optimizer.zero_grad()
             # ssd : loc, conf // seg : scores
             loc, conf, scores = model(images)
-            seg_loss = loss_seg_fn(input=scores, target=labels)
-            ssd_loss = loss_ssd_fn(loc, loc_label, conf, conf_label)
+            seg_loss = loss_seg_fn(input=scores, target=seg_labels)
+            ssd_loss = loss_ssd_fn(loc, loc_labels, conf, conf_labels)
             loss = seg_loss+ssd_loss
             loss.backward()
             optimizer.step()
@@ -126,14 +137,37 @@ def train(cfg){
                 )
             if (i+1)%cfg['training']['val_interval']==0:
                 model.eval()
-                for i_val, (images_val, labels_val)...
-}
+                ssd_loss = 0
+                for i_val, (images_val, seg_val, loc_val, conf_val) in tqdm(enumerate(valloader)):
+                    images_val = images_val.cuda()
+                    seg_val = seg_val.cuda()
+                    loc_val = loc_val.cuda()
+                    conf_val = conf_val.cuda()
 
+                    loc, conf, scores = model(images_val)
+                    # segmentation    
+                    pred = scores.data.max(1)[1].cpu().numpy()
+                    gt = seg_val.data.cpu().numpy()
+                    running_metrics_val.update(gt, pred)
+                    # ssd-detect
+                    loss = loss_ssd_fn(loc, loc_val, conf,conf_val)
+                    ssd_loss += loss.data[0]
+                    print('%.3f %.3f' % (loss.data[0],test_loss/(i_val+1)))
 
+                score, class_iou = running_metrics_val.get_scores()
+                for k,v in score.items():
+                    print(k,v)
+                running_metrics_val.reset()
 
-
-
-
+                if score["Mean IoU : \t"] >= best_iou:
+                    best_iou = score["Mean IoU : \t"]
+                    state = {
+                        "epoch": i + 1,
+                        "model_state": model.state_dict(),
+                        "optimizer_state": optimizer.state_dict(),
+                    }
+                    torch.save(state, "{}_{}_best_model.pkl".format(cfg['model']['arch'],
+                                                                    cfg['data']['dataset']))
 
 
 if __name__ == "__main__":
