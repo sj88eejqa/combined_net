@@ -20,7 +20,7 @@ def get_loader(name):
                 "pascal":vocloader.pascalVOCLoader,
                 "ade20k":ade20kloader.ADE20KLoader
             }[name](root, is_transform, split, img_size, augmentation,img_norm)
-            detect_list = pjoin(root,detect_list,(is_train?"voc12_train.txt":"voc12_test.txt"))
+            detect_list = pjoin(root,detect_list,("voc12_train.txt" if is_train else "voc12_test.txt"))
             self.detect_loader = ListDataset(root,detect_list,is_train,transform)
 
         def __len__(self):
